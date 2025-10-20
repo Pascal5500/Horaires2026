@@ -1,0 +1,80 @@
+body {
+    background-color: #f4f7fa; 
+}
+
+/* Centre la page sur les grands écrans */
+.container {
+    max-width: 1400px; 
+}
+
+/* 1. Zone de contrôle (dates, boutons, admin) reste figée */
+#controlContainer {
+    position: sticky;
+    top: 0; 
+    z-index: 1000; 
+    /* Important: Fond opaque pour cacher le tableau en dessous */
+    background-color: #f4f7fa; 
+    box-shadow: 0 4px 6px -6px #333; 
+    padding-top: 10px;
+}
+
+/* 2. Fixe l'en-tête de la table (la bande noire des dates) */
+#scheduleTable thead {
+    position: sticky;
+    /* Coller juste sous le controlContainer (ajuster si nécessaire) */
+    top: 0; 
+    z-index: 10;
+    /* Règle pour que la bande noire soit bien visible */
+    background-color: #343a40; 
+}
+
+/* Style général du tableau */
+#scheduleTable {
+    width: 100%;
+    border-collapse: collapse; 
+}
+
+#scheduleTable th, #scheduleTable td {
+    white-space: nowrap; 
+    padding: 0.5rem;
+    border: 1px solid #dee2e6;
+}
+
+/* Style pour les sélecteurs de plages horaires */
+.shift-select {
+    width: 100%;
+    min-width: 100px; 
+    border: none;
+    padding: 0.5rem 0.2rem; 
+    background-color: transparent;
+    cursor: pointer;
+    font-size: 0.85rem;
+}
+
+/* Style pour le bouton actif dans la barre de filtre */
+.btn-outline-dark.active {
+    background-color: #343a40 !important;
+    color: white !important;
+}
+
+/* Cache les éléments d'administration et de contrôle lors de l'impression */
+@media print {
+    /* Cache le conteneur sticky (contrôles) lors de l'impression */
+    #controlContainer {
+        display: none !important;
+    }
+    
+    /* Retire la position sticky de la tête pour l'impression */
+    #scheduleTable thead {
+        position: static !important;
+    }
+    
+    .shift-select {
+        display: none;
+    }
+    
+    #scheduleTable td {
+        background-color: #fff;
+        text-align: center;
+    }
+}
