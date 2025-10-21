@@ -188,7 +188,7 @@ function updateAvailability(event) {
 }
 
 
-// --- NAVIGATION HEBDOMADAIRE ET AFFICHAGE (CORRIGÉ POUR DÉBUT DIMANCHE) ---
+// --- NAVIGATION HEBDOMADAIRE ET AFFICHAGE (CORRIGÉ POUR DÉBUT DIMANCHE GARANTI) ---
 
 /**
  * Crée un objet Date basé sur la date locale de minuit, ignorant le décalage UTC.
@@ -203,26 +203,33 @@ function createLocalMidnightDate(dateString) {
     return new Date(year, month, day, 0, 0, 0); 
 }
 
+/**
+ * Prend n'importe quelle date et retourne la date du Dimanche (jour 0) de cette même semaine.
+ * @param {Date} date - L'objet Date à ajuster.
+ * @returns {Date} L'objet Date ajusté au Dimanche de la semaine.
+ */
+function getSundayOfWeek(date) {
+    const dayOfWeek = date.getDay(); 
+    
+    // Recule le nombre de jours nécessaires pour arriver au Dimanche (Jour 0)
+    date.setDate(date.getDate() - dayOfWeek);
+    return date;
+}
+
 
 /**
- * Détermine le dimanche précédent ou le jour même si c'est déjà dimanche,
- * puis génère une semaine complète (7 jours).
+ * Détermine le Dimanche de la semaine de la date sélectionnée et génère les 7 jours.
  */
 function getDates(startDate) {
     const dates = [];
     
-    // 1. Commence par la date sélectionnée
-    let current = createLocalMidnightDate(startDate);
+    // Commence par la date actuellement sélectionnée dans l'input
+    let selectedDate = createLocalMidnightDate(startDate);
     
-    // 2. Trouve le Dimanche de cette semaine.
-    // getDay() retourne 0 pour Dimanche, 1 pour Lundi, ..., 6 pour Samedi.
-    const dayOfWeek = current.getDay(); 
+    // S'assure que nous commençons la boucle par le Dimanche précédent ou actuel
+    let current = getSundayOfWeek(selectedDate);
     
-    // 3. Recule le nombre de jours nécessaires pour arriver au Dimanche (Jour 0)
-    // Par exemple : Si c'est Mardi (2), on recule de 2 jours. Si c'est Dimanche (0), on recule de 0.
-    current.setDate(current.getDate() - dayOfWeek);
-    
-    // 4. Génère les 7 jours à partir du Dimanche calculé
+    // Génère les 7 jours à partir du Dimanche
     for (let i = 0; i < 7; i++) { 
         dates.push(new Date(current));
         current.setDate(current.getDate() + 1);
@@ -232,17 +239,16 @@ function getDates(startDate) {
 }
 
 /**
- * Change la date de début de l'horaire pour naviguer (avance ou recule d'une semaine complète).
+ * Change la date de début de l'horaire (avance ou recule d'une semaine entière).
  */
 function changeWeek(delta) {
     const startDateInput = document.getElementById('startDate');
     if (!startDateInput.value) return;
 
-    // Commence par la date actuellement affichée (le dimanche de la semaine précédente)
+    // Commence par la date actuelle (qui devrait déjà être un dimanche si l'initialisation a fonctionné)
     let currentStartDate = createLocalMidnightDate(startDateInput.value); 
     
-    // Calcule la date du Dimanche de la semaine à naviguer
-    // On ajoute 7 jours pour l'avance (+1) ou on enlève 7 jours pour le recul (-1)
+    // On avance ou recule la date de 7 jours
     currentStartDate.setDate(currentStartDate.getDate() + (7 * delta));
 
     // Formate et met à jour le champ de date
@@ -252,12 +258,11 @@ function changeWeek(delta) {
 
     startDateInput.value = `${year}-${month}-${day}`;
     
-    // Une fois la nouvelle date de Dimanche réglée, on regénère l'horaire
+    // Regénère l'horaire
     generateSchedule();
 }
 
 // ... Le reste du fichier script.js ne change pas
-
 // Mise à jour de l'horaire par l'ADMIN (menu déroulant)
 function updateSchedule(event) {
     const select = event.target;
@@ -426,13 +431,22 @@ function exportPDF() {
 }
 
 
-// --- INITIALISATION ---
+// --- INITIALISATION (MODIFIÉ) ---
 
 document.addEventListener('DOMContentLoaded', () => {
     syncDataFromFirebase(); 
     
-    const today = new Date().toISOString().split('T')[0];
-    document.getElementById('startDate').value = today;
+    // MODIFICATION ICI: Initialise la date de début au Dimanche de cette semaine
+    const today = new Date();
+    const currentSunday = getSundayOfWeek(today); // Trouve le Dimanche
+    
+    // Formate le Dimanche pour le champ input (YYYY-MM-DD)
+    const year = currentSunday.getFullYear();
+    const month = String(currentSunday.getMonth() + 1).padStart(2, '0');
+    const day = String(currentSunday.getDate()).padStart(2, '0');
+    
+    document.getElementById('startDate').value = `${year}-${month}-${day}`;
 
     document.getElementById('adminPanel').style.display = 'none';
+});
 });
