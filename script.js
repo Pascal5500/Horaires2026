@@ -4,12 +4,12 @@ const ADMIN_PASSWORD = '1000';
 let isAdminMode = false;
 let currentDisplayFilter = 'all'; 
 
-// Ces variables ne sont plus stockées dans LocalStorage, elles viennent de Firebase
+// Ces variables sont mises à jour par les écouteurs Firebase
 let employees = [];
 let shifts = ["------"]; 
 let scheduleData = {}; 
 
-// --- FONCTIONS DE SAUVEGARDE ET DE LECTURE (MISE À JOUR FIREBASE) ---
+// --- FONCTIONS DE SAUVEGARDE ET DE LECTURE (FIREBASE) ---
 
 // Sauvegarde vers Firebase
 function saveEmployees() {
@@ -23,16 +23,14 @@ function saveSchedule() {
     db.ref('scheduleData').set(scheduleData);
 }
 
-// Fonction pour synchroniser toutes les données de la base de données
+// Fonction pour synchroniser toutes les données de la base de données (Inchangée)
 function syncDataFromFirebase() {
-    // Écoute des changements d'employés
     db.ref('employees').on('value', (snapshot) => {
         employees = snapshot.val() || [];
         renderAdminLists();
         generateSchedule(); 
     });
 
-    // Écoute des changements de plages horaires
     db.ref('shifts').on('value', (snapshot) => {
         const storedShifts = snapshot.val() || ['8h-16h', '16h-24h', 'Congé', 'Fermé'];
         shifts = ["------"];
@@ -45,10 +43,9 @@ function syncDataFromFirebase() {
         generateSchedule();
     });
 
-    // Écoute des changements d'horaire
     db.ref('scheduleData').on('value', (snapshot) => {
         scheduleData = snapshot.val() || {};
-        generateSchedule(); // Le tableau se met à jour immédiatement
+        generateSchedule();
     });
 }
 
@@ -78,7 +75,7 @@ function disableAdminMode() {
     const passwordInput = document.getElementById('adminPassword');
     passwordInput.disabled = false;
     document.getElementById('adminAuthButton').disabled = false;
-    passwordInput.placeholder = '';
+    passwordInput.placeholder = 'Mot de passe admin (1000)';
     document.getElementById('adminPanel').style.display = 'none';
     generateSchedule();
     alert("Mode Administrateur désactivé.");
@@ -87,6 +84,7 @@ function disableAdminMode() {
 
 // --- GESTION DES EMPLOYÉS ET PLAGES HORAIRES (ADMIN) ---
 
+// Les fonctions add/remove Employee/Shift restent inchangées et appellent saveXXX()
 function addEmployee() {
     const nameInput = document.getElementById('newEmployeeName');
     const deptInput = document.getElementById('newEmployeeDept');
@@ -96,20 +94,19 @@ function addEmployee() {
     if (name && dept) {
         employees.push({ id: Date.now(), name, dept }); 
         nameInput.value = '';
-        saveEmployees(); // Sauvegarde vers Firebase
+        saveEmployees();
     }
 }
 
 function removeEmployee(id) {
     employees = employees.filter(emp => emp.id !== Number(id)); 
-    // Supprimer les entrées d'horaire pour cet employé
     Object.keys(scheduleData).forEach(key => {
         if (key.startsWith(`${id}-`)) {
             delete scheduleData[key];
         }
     });
-    saveEmployees(); // Sauvegarde vers Firebase
-    saveSchedule(); // Sauvegarde de l'horaire mis à jour
+    saveEmployees();
+    saveSchedule();
 }
 
 function addShift() {
@@ -118,18 +115,18 @@ function addShift() {
 
     if (newShift && newShift !== "------" && !shifts.includes(newShift)) {
         shifts.push(newShift);
-        saveShifts(); // Sauvegarde vers Firebase
+        saveShifts();
         shiftInput.value = '';
     }
 }
 
 function removeShift(shift) {
     shifts = shifts.filter(s => s !== shift);
-    saveShifts(); // Sauvegarde vers Firebase
+    saveShifts();
 }
 
 function renderAdminLists() {
-    // La logique de rendu des listes reste la même (elle utilise les variables globales mises à jour par Firebase)
+    // Logique de rendu des listes (inchangée)
     const shiftsList = document.getElementById('shiftsList');
     shiftsList.innerHTML = '';
     
@@ -163,7 +160,35 @@ function renderAdminLists() {
     });
 }
 
-// --- NAVIGATION HEBDOMADAIRE ET AFFICHAGE ---
+// --- LOGIQUE DE LA CASE À COCHER N/D ---
+
+function updateAvailability(event) {
+    const checkbox = event.target;
+    const scheduleKey = checkbox.getAttribute('data-key');
+    const isChecked = checkbox.checked;
+
+    // Met à jour la disponibilité dans l'objet de données sous une clé spécifique
+    const availabilityKey = `avail-${scheduleKey}`;
+
+    if (isChecked) {
+        scheduleData[availabilityKey] = true;
+    } else {
+        delete scheduleData[availabilityKey];
+    }
+    
+    // Met à jour le style de la cellule pour tous les utilisateurs
+    const cell = checkbox.closest('td');
+    if (isChecked) {
+        cell.classList.add('not-available');
+    } else {
+        cell.classList.remove('not-available');
+    }
+
+    saveSchedule(); // Sauvegarde le changement dans Firebase
+}
+
+
+// --- NAVIGATION HEBDOMADAIRE ET AFFICHAGE (MODIFIÉ) ---
 
 function getDates(startDate) {
     const dates = [];
@@ -186,21 +211,20 @@ function changeWeek(delta) {
     generateSchedule();
 }
 
-// MODIFIÉ: Met à jour Firebase, ce qui déclenche la mise à jour pour tous les employés
+// Mise à jour de l'horaire par l'ADMIN (menu déroulant)
 function updateSchedule(event) {
     const select = event.target;
     const key = select.getAttribute('data-key');
     const value = select.value;
     
     if (value === "------") {
-        // Enlève l'entrée si "------" est sélectionné
         delete scheduleData[key];
     } else {
         scheduleData[key] = value;
     }
     
-    select.parentElement.setAttribute('data-shift', value); 
-    saveSchedule(); // Sauvegarde vers Firebase
+    select.parentElement.querySelector('.shift-label').textContent = value; // Pour l'impression
+    saveSchedule();
 }
 
 function generateSchedule() {
@@ -211,8 +235,8 @@ function generateSchedule() {
     const tableHeader = document.getElementById('tableHeader');
     const tableBody = document.getElementById('tableBody'); 
 
-    // 1. Générer l'en-tête du tableau (inchangé)
-    tableHeader.innerHTML = '<th>Employé</th>';
+    // 1. Générer l'en-tête du tableau
+    tableHeader.innerHTML = '<th>Département / Employé</th>';
     dates.forEach(date => {
         const day = date.toLocaleDateString('fr-FR', { weekday: 'short' });
         const dateStr = date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'numeric' });
@@ -244,26 +268,32 @@ function generateSchedule() {
                     
                     const scheduleKey = `${emp.id}-${dateKey}`;
                     const currentShift = scheduleData[scheduleKey] || "------"; 
+                    const isNotAvailable = scheduleData[`avail-${scheduleKey}`] || false; // Nouvelle clé pour N/D
 
-                    // Créer le menu déroulant
-                    const select = document.createElement('select');
-                    select.className = 'shift-select';
-                    select.disabled = !isAdminMode; 
-                    select.setAttribute('data-key', scheduleKey);
-                    select.onchange = updateSchedule;
+                    // Ajoute la classe rouge si N/D est coché
+                    if (isNotAvailable) {
+                        cell.classList.add('not-available');
+                    }
                     
-                    shifts.forEach(shift => {
-                        const option = document.createElement('option');
-                        option.value = shift;
-                        option.textContent = shift;
-                        if (shift === currentShift) {
-                            option.selected = true;
-                        }
-                        select.appendChild(option);
-                    });
-                    
-                    cell.appendChild(select);
-                    cell.setAttribute('data-shift', currentShift); 
+                    // --- NOUVELLE STRUCTURE DE LA CELLULE ---
+                    cell.innerHTML = `
+                        <div class="d-flex flex-column align-items-center position-relative">
+                            
+                            <div class="form-check form-check-inline availability-check">
+                                <input class="form-check-input" type="checkbox" data-key="${scheduleKey}" 
+                                       id="nd-${scheduleKey}" onchange="updateAvailability(event)"
+                                       ${isNotAvailable ? 'checked' : ''}>
+                                <label class="form-check-label fw-bold" for="nd-${scheduleKey}">N/D</label>
+                            </div>
+
+                            <select class="shift-select" data-key="${scheduleKey}" onchange="updateSchedule(event)"
+                                    ${!isAdminMode ? 'disabled' : ''} style="min-width: 90px; margin-top: 5px;">
+                                ${shifts.map(shift => `<option value="${shift}" ${shift === currentShift ? 'selected' : ''}>${shift}</option>`).join('')}
+                            </select>
+                            
+                            <span class="shift-label" style="display: none;">${currentShift}</span>
+                        </div>
+                    `;
                 });
             });
         }
@@ -349,13 +379,11 @@ function exportPDF() {
 }
 
 
-// --- INITIALISATION (MODIFIÉ: Appel à la synchronisation Firebase) ---
+// --- INITIALISATION ---
 
 document.addEventListener('DOMContentLoaded', () => {
-    // 1. Initialise la connexion aux données
     syncDataFromFirebase(); 
     
-    // 2. Le reste de l'initialisation reste le même
     const today = new Date().toISOString().split('T')[0];
     document.getElementById('startDate').value = today;
 
