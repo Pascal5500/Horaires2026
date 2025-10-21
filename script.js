@@ -4,31 +4,55 @@ const ADMIN_PASSWORD = '1000';
 let isAdminMode = false;
 let currentDisplayFilter = 'all'; 
 
-// Initialisation des données depuis le LocalStorage
-let employees = JSON.parse(localStorage.getItem('employees')) || [];
-// MODIFICATION 1 : Assurer que "------" est toujours la première option
-let storedShifts = JSON.parse(localStorage.getItem('shifts')) || ['8h-16h', '16h-24h', 'Congé', 'Fermé'];
-let shifts = ["------"]; // La valeur par défaut est toujours en premier
-storedShifts.forEach(shift => {
-    if (shift !== "------" && !shifts.includes(shift)) {
-        shifts.push(shift);
-    }
-});
+// Ces variables ne sont plus stockées dans LocalStorage, elles viennent de Firebase
+let employees = [];
+let shifts = ["------"]; 
+let scheduleData = {}; 
 
-let scheduleData = JSON.parse(localStorage.getItem('scheduleData')) || {}; 
+// --- FONCTIONS DE SAUVEGARDE ET DE LECTURE (MISE À JOUR FIREBASE) ---
 
-// --- FONCTIONS UTILITAIRES DE SAUVEGARDE ---
-
-function saveData() {
-    // Lors de la sauvegarde, nous sauvegardons toutes les options sauf la première ("------")
+// Sauvegarde vers Firebase
+function saveEmployees() {
+    db.ref('employees').set(employees);
+}
+function saveShifts() {
     const shiftsToSave = shifts.filter(s => s !== "------");
-    localStorage.setItem('employees', JSON.stringify(employees));
-    localStorage.setItem('shifts', JSON.stringify(shiftsToSave));
-    localStorage.setItem('scheduleData', JSON.stringify(scheduleData));
+    db.ref('shifts').set(shiftsToSave);
+}
+function saveSchedule() {
+    db.ref('scheduleData').set(scheduleData);
+}
+
+// Fonction pour synchroniser toutes les données de la base de données
+function syncDataFromFirebase() {
+    // Écoute des changements d'employés
+    db.ref('employees').on('value', (snapshot) => {
+        employees = snapshot.val() || [];
+        renderAdminLists();
+        generateSchedule(); 
+    });
+
+    // Écoute des changements de plages horaires
+    db.ref('shifts').on('value', (snapshot) => {
+        const storedShifts = snapshot.val() || ['8h-16h', '16h-24h', 'Congé', 'Fermé'];
+        shifts = ["------"];
+        storedShifts.forEach(shift => {
+            if (shift !== "------" && !shifts.includes(shift)) {
+                shifts.push(shift);
+            }
+        });
+        renderAdminLists();
+        generateSchedule();
+    });
+
+    // Écoute des changements d'horaire
+    db.ref('scheduleData').on('value', (snapshot) => {
+        scheduleData = snapshot.val() || {};
+        generateSchedule(); // Le tableau se met à jour immédiatement
+    });
 }
 
 // --- FONCTIONS D'AUTHENTIFICATION (inchangées) ---
-
 function authenticateAdmin() {
     const passwordInput = document.getElementById('adminPassword');
     if (passwordInput.value === ADMIN_PASSWORD) {
@@ -54,11 +78,12 @@ function disableAdminMode() {
     const passwordInput = document.getElementById('adminPassword');
     passwordInput.disabled = false;
     document.getElementById('adminAuthButton').disabled = false;
-    passwordInput.placeholder = '';
+    passwordInput.placeholder = 'Mot de passe admin (1000)';
     document.getElementById('adminPanel').style.display = 'none';
     generateSchedule();
     alert("Mode Administrateur désactivé.");
 }
+
 
 // --- GESTION DES EMPLOYÉS ET PLAGES HORAIRES (ADMIN) ---
 
@@ -71,52 +96,43 @@ function addEmployee() {
     if (name && dept) {
         employees.push({ id: Date.now(), name, dept }); 
         nameInput.value = '';
-        saveData();
-        renderAdminLists(); 
-        generateSchedule(); 
+        saveEmployees(); // Sauvegarde vers Firebase
     }
 }
 
 function removeEmployee(id) {
     employees = employees.filter(emp => emp.id !== Number(id)); 
-    // Mettre à jour scheduleData pour retirer les entrées de l'employé supprimé
+    // Supprimer les entrées d'horaire pour cet employé
     Object.keys(scheduleData).forEach(key => {
         if (key.startsWith(`${id}-`)) {
             delete scheduleData[key];
         }
     });
-    saveData();
-    renderAdminLists();
-    generateSchedule();
+    saveEmployees(); // Sauvegarde vers Firebase
+    saveSchedule(); // Sauvegarde de l'horaire mis à jour
 }
 
 function addShift() {
     const shiftInput = document.getElementById('newShift');
     const newShift = shiftInput.value.trim();
 
-    // S'assurer que le nouveau shift n'est pas déjà présent et n'est pas la valeur par défaut
     if (newShift && newShift !== "------" && !shifts.includes(newShift)) {
         shifts.push(newShift);
+        saveShifts(); // Sauvegarde vers Firebase
         shiftInput.value = '';
-        saveData();
-        renderAdminLists(); 
-        generateSchedule(); 
     }
 }
 
 function removeShift(shift) {
     shifts = shifts.filter(s => s !== shift);
-    saveData();
-    renderAdminLists();
-    generateSchedule();
+    saveShifts(); // Sauvegarde vers Firebase
 }
 
 function renderAdminLists() {
-    // Liste des plages horaires
+    // La logique de rendu des listes reste la même (elle utilise les variables globales mises à jour par Firebase)
     const shiftsList = document.getElementById('shiftsList');
     shiftsList.innerHTML = '';
     
-    // On affiche toutes les options SAUF la valeur par défaut pour l'administration
     shifts.filter(s => s !== "------").forEach(shift => {
         const li = document.createElement('li');
         li.className = 'list-group-item d-flex justify-content-between align-items-center';
@@ -125,7 +141,6 @@ function renderAdminLists() {
         shiftsList.appendChild(li);
     });
 
-    // Listes des employés par département (inchangées)
     const listContainer = document.getElementById('employeesListContainer');
     listContainer.innerHTML = '';
 
@@ -171,20 +186,21 @@ function changeWeek(delta) {
     generateSchedule();
 }
 
+// MODIFIÉ: Met à jour Firebase, ce qui déclenche la mise à jour pour tous les employés
 function updateSchedule(event) {
     const select = event.target;
     const key = select.getAttribute('data-key');
     const value = select.value;
     
-    // Si la valeur est "------", on supprime l'entrée pour garder le stockage propre
     if (value === "------") {
+        // Enlève l'entrée si "------" est sélectionné
         delete scheduleData[key];
     } else {
         scheduleData[key] = value;
     }
     
     select.parentElement.setAttribute('data-shift', value); 
-    saveData();
+    saveSchedule(); // Sauvegarde vers Firebase
 }
 
 function generateSchedule() {
@@ -195,8 +211,8 @@ function generateSchedule() {
     const tableHeader = document.getElementById('tableHeader');
     const tableBody = document.getElementById('tableBody'); 
 
-    // 1. Générer l'en-tête du tableau (7 jours)
-    tableHeader.innerHTML = '<th>Employé</th>';
+    // 1. Générer l'en-tête du tableau (inchangé)
+    tableHeader.innerHTML = '<th>Département / Employé</th>';
     dates.forEach(date => {
         const day = date.toLocaleDateString('fr-FR', { weekday: 'short' });
         const dateStr = date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'numeric' });
@@ -211,13 +227,11 @@ function generateSchedule() {
         const deptEmployees = employees.filter(emp => emp.dept === dept);
 
         if (deptEmployees.length > 0) {
-            // Ligne du département 
             const deptRow = tableBody.insertRow(currentRow++);
             deptRow.className = 'table-secondary fw-bold dept-header-row';
             deptRow.setAttribute('data-dept', dept); 
             deptRow.innerHTML = `<td colspan="${8}">${dept}</td>`; 
             
-            // Lignes des employés
             deptEmployees.forEach(emp => {
                 const row = tableBody.insertRow(currentRow++);
                 row.className = 'employee-row'; 
@@ -229,8 +243,6 @@ function generateSchedule() {
                     const cell = row.insertCell();
                     
                     const scheduleKey = `${emp.id}-${dateKey}`;
-                    
-                    // MODIFICATION 2 : La valeur par défaut est désormais "------"
                     const currentShift = scheduleData[scheduleKey] || "------"; 
 
                     // Créer le menu déroulant
@@ -257,11 +269,11 @@ function generateSchedule() {
         }
     });
     
-    // Applique le filtre d'affichage après la génération
     applyDisplayFilter(currentDisplayFilter);
 }
 
-// --- LOGIQUE DE FILTRAGE PAR BOUTON (inchangée) ---
+
+// --- FONCTIONS DE FILTRAGE ET EXPORT (inchangées) ---
 
 function filterByButton(button, dept) {
     const buttons = document.querySelectorAll('.d-flex.gap-2 button');
@@ -271,7 +283,6 @@ function filterByButton(button, dept) {
     currentDisplayFilter = dept;
     applyDisplayFilter(dept);
 }
-
 
 function applyDisplayFilter(deptToFilter) {
     const tableBody = document.getElementById('tableBody'); 
@@ -300,9 +311,6 @@ function applyDisplayFilter(deptToFilter) {
     }
 }
 
-
-// --- FONCTIONS D'EXPORTATION ET D'IMPRESSION (inchangées) ---
-
 function filterScheduleForAction(deptToFilter) {
     applyDisplayFilter(deptToFilter);
 }
@@ -314,9 +322,7 @@ function getSelectedDept() {
 function printSchedule() {
     const dept = getSelectedDept();
     filterScheduleForAction(dept); 
-    
     window.print();
-    
     filterScheduleForAction(currentDisplayFilter); 
 }
 
@@ -342,14 +348,16 @@ function exportPDF() {
     });
 }
 
-// --- INITIALISATION ---
+
+// --- INITIALISATION (MODIFIÉ: Appel à la synchronisation Firebase) ---
 
 document.addEventListener('DOMContentLoaded', () => {
+    // 1. Initialise la connexion aux données
+    syncDataFromFirebase(); 
+    
+    // 2. Le reste de l'initialisation reste le même
     const today = new Date().toISOString().split('T')[0];
     document.getElementById('startDate').value = today;
 
     document.getElementById('adminPanel').style.display = 'none';
-
-    renderAdminLists();
-    generateSchedule(); 
 });
