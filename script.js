@@ -236,7 +236,7 @@ function generateSchedule() {
     const tableBody = document.getElementById('tableBody'); 
 
     // 1. Générer l'en-tête du tableau
-    tableHeader.innerHTML = '<th>Département / Employé</th>';
+    tableHeader.innerHTML = '<th>Employé</th>';
     dates.forEach(date => {
         const day = date.toLocaleDateString('fr-FR', { weekday: 'short' });
         const dateStr = date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'numeric' });
