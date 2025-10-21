@@ -188,56 +188,71 @@ function updateAvailability(event) {
 }
 
 
-// --- NAVIGATION HEBDOMADAIRE ET AFFICHAGE (CORRIGÉ POUR LE FUSEAU HORAIRE) ---
+// --- NAVIGATION HEBDOMADAIRE ET AFFICHAGE (CORRIGÉ POUR DÉBUT DIMANCHE) ---
 
 /**
  * Crée un objet Date basé sur la date locale de minuit, ignorant le décalage UTC.
- * C'est essentiel pour que la navigation soit toujours jour-pour-jour.
- * @param {string} dateString - Date au format YYYY-MM-DD.
- * @returns {Date} Objet Date aligné sur le fuseau horaire local (minuit).
  */
 function createLocalMidnightDate(dateString) {
     const parts = dateString.split('-');
-    // Date.UTC() garantit que la date est créée sans décalage, mais nous allons
-    // la recréer en tant qu'objet Date standard qui se comportera localement.
     const year = parseInt(parts[0]);
-    const month = parseInt(parts[1]) - 1; // Le mois en JS commence à 0
+    const month = parseInt(parts[1]) - 1; 
     const day = parseInt(parts[2]);
     
-    // Créer la date locale directement
-    return new Date(year, month, day, 0, 0, 0); // 00:00:00 Heure locale
+    // Créer la date locale directement à 00:00:00 Heure locale
+    return new Date(year, month, day, 0, 0, 0); 
 }
 
 
+/**
+ * Détermine le dimanche précédent ou le jour même si c'est déjà dimanche,
+ * puis génère une semaine complète (7 jours).
+ */
 function getDates(startDate) {
     const dates = [];
-    // Utilise la nouvelle fonction pour s'assurer que l'heure de début est locale minuit
-    let current = createLocalMidnightDate(startDate); 
     
+    // 1. Commence par la date sélectionnée
+    let current = createLocalMidnightDate(startDate);
+    
+    // 2. Trouve le Dimanche de cette semaine.
+    // getDay() retourne 0 pour Dimanche, 1 pour Lundi, ..., 6 pour Samedi.
+    const dayOfWeek = current.getDay(); 
+    
+    // 3. Recule le nombre de jours nécessaires pour arriver au Dimanche (Jour 0)
+    // Par exemple : Si c'est Mardi (2), on recule de 2 jours. Si c'est Dimanche (0), on recule de 0.
+    current.setDate(current.getDate() - dayOfWeek);
+    
+    // 4. Génère les 7 jours à partir du Dimanche calculé
     for (let i = 0; i < 7; i++) { 
         dates.push(new Date(current));
         current.setDate(current.getDate() + 1);
     }
+    
     return dates;
 }
 
+/**
+ * Change la date de début de l'horaire pour naviguer (avance ou recule d'une semaine complète).
+ */
 function changeWeek(delta) {
     const startDateInput = document.getElementById('startDate');
     if (!startDateInput.value) return;
 
-    // Utilise la nouvelle fonction pour s'assurer que nous commençons par une date alignée
+    // Commence par la date actuellement affichée (le dimanche de la semaine précédente)
     let currentStartDate = createLocalMidnightDate(startDateInput.value); 
     
-    // Ajoute ou soustrait 7 jours. Puisque l'heure est fixée à minuit local, 
-    // le changement de date sera toujours précis.
+    // Calcule la date du Dimanche de la semaine à naviguer
+    // On ajoute 7 jours pour l'avance (+1) ou on enlève 7 jours pour le recul (-1)
     currentStartDate.setDate(currentStartDate.getDate() + (7 * delta));
 
-    // Formate la date pour le champ input (YYYY-MM-DD)
+    // Formate et met à jour le champ de date
     const year = currentStartDate.getFullYear();
     const month = String(currentStartDate.getMonth() + 1).padStart(2, '0');
     const day = String(currentStartDate.getDate()).padStart(2, '0');
 
     startDateInput.value = `${year}-${month}-${day}`;
+    
+    // Une fois la nouvelle date de Dimanche réglée, on regénère l'horaire
     generateSchedule();
 }
 
