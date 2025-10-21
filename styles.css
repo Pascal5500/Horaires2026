@@ -78,41 +78,50 @@ body {
         text-align: center;
     }
 }
-/* --- Styles pour la fonctionnalité N/D --- */
+/* --- Styles pour la fonctionnalité N/D (CORRECTION APPLIQUÉE ICI) --- */
 
-/* Conteneur de la case à cocher pour aligner le N/D en haut */
+/* Positionnement de la case à cocher N/D */
 .availability-check {
     position: absolute;
-    top: 5px; /* Petit espace depuis le haut de la cellule */
-    right: 5px; /* Petit espace depuis la droite de la cellule */
+    top: 5px;
+    right: 5px;
     z-index: 5;
     font-size: 0.75rem;
 }
 
-/* Règle principale: La cellule devient rouge si N/D est coché */
+/* CORRECTION : Règle principale pour la couleur rouge de la cellule */
 .not-available {
-    background-color: #ffcccc !important; /* Fond rouge très clair */
-    border: 2px solid #cc0000 !important; /* Bordure rouge pour la visibilité */
+    /* Utilisation de !important pour forcer la couleur de fond sur la cellule (td) */
+    background-color: #ffcccc !important; 
+    /* Utilisation de !important pour forcer la bordure */
+    border: 1px solid #cc0000 !important; 
 }
 
-/* Assurer que le menu déroulant est centré visuellement sous la case N/D */
+/* Ajustement pour centrer le menu déroulant visuellement sous la case N/D */
 .shift-select {
     width: 100%;
-    margin-top: 15px; /* Déplace le menu sous le N/D */
+    margin-top: 15px; 
 }
 
-/* Masque la case à cocher et affiche le texte pour l'impression */
+/* Cache les éléments d'administration et de contrôle lors de l'impression (inchangé) */
 @media print {
+    #controlContainer {
+        display: none !important;
+    }
+    
+    #scheduleTable thead {
+        position: static !important;
+    }
+    
     .availability-check {
         display: none !important;
     }
     
     .shift-label {
-        display: block !important; /* Affiche le texte de l'horaire pour l'impression */
+        display: block !important;
     }
 
     .not-available {
-        /* Laisse la couleur rouge pour signaler le N/D même à l'impression */
         background-color: #ffcccc !important; 
     }
 }
