@@ -188,11 +188,32 @@ function updateAvailability(event) {
 }
 
 
-// --- NAVIGATION HEBDOMADAIRE ET AFFICHAGE (MODIFIÉ) ---
+// --- NAVIGATION HEBDOMADAIRE ET AFFICHAGE (CORRIGÉ POUR LE FUSEAU HORAIRE) ---
+
+/**
+ * Crée un objet Date basé sur la date locale de minuit, ignorant le décalage UTC.
+ * C'est essentiel pour que la navigation soit toujours jour-pour-jour.
+ * @param {string} dateString - Date au format YYYY-MM-DD.
+ * @returns {Date} Objet Date aligné sur le fuseau horaire local (minuit).
+ */
+function createLocalMidnightDate(dateString) {
+    const parts = dateString.split('-');
+    // Date.UTC() garantit que la date est créée sans décalage, mais nous allons
+    // la recréer en tant qu'objet Date standard qui se comportera localement.
+    const year = parseInt(parts[0]);
+    const month = parseInt(parts[1]) - 1; // Le mois en JS commence à 0
+    const day = parseInt(parts[2]);
+    
+    // Créer la date locale directement
+    return new Date(year, month, day, 0, 0, 0); // 00:00:00 Heure locale
+}
+
 
 function getDates(startDate) {
     const dates = [];
-    let current = new Date(startDate);
+    // Utilise la nouvelle fonction pour s'assurer que l'heure de début est locale minuit
+    let current = createLocalMidnightDate(startDate); 
+    
     for (let i = 0; i < 7; i++) { 
         dates.push(new Date(current));
         current.setDate(current.getDate() + 1);
@@ -204,12 +225,23 @@ function changeWeek(delta) {
     const startDateInput = document.getElementById('startDate');
     if (!startDateInput.value) return;
 
-    let currentStartDate = new Date(startDateInput.value);
+    // Utilise la nouvelle fonction pour s'assurer que nous commençons par une date alignée
+    let currentStartDate = createLocalMidnightDate(startDateInput.value); 
+    
+    // Ajoute ou soustrait 7 jours. Puisque l'heure est fixée à minuit local, 
+    // le changement de date sera toujours précis.
     currentStartDate.setDate(currentStartDate.getDate() + (7 * delta));
 
-    startDateInput.value = currentStartDate.toISOString().split('T')[0];
+    // Formate la date pour le champ input (YYYY-MM-DD)
+    const year = currentStartDate.getFullYear();
+    const month = String(currentStartDate.getMonth() + 1).padStart(2, '0');
+    const day = String(currentStartDate.getDate()).padStart(2, '0');
+
+    startDateInput.value = `${year}-${month}-${day}`;
     generateSchedule();
 }
+
+// ... Le reste du fichier script.js ne change pas
 
 // Mise à jour de l'horaire par l'ADMIN (menu déroulant)
 function updateSchedule(event) {
