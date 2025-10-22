@@ -159,7 +159,7 @@ function renderAdminLists() {
     });
 }
 
-// --- NAVIGATION HEBDOMADAIRE ET AFFICHAGE ---
+// --- NAVIGATION HEBDOMADAIRE ET AFFICHAGE (CORRECTION DATE DIMANCHE) ---
 
 function createLocalMidnightDate(dateString) {
     if (!dateString) return new Date(); 
@@ -168,7 +168,6 @@ function createLocalMidnightDate(dateString) {
     const month = parseInt(parts[1]) - 1; 
     const day = parseInt(parts[2]);
     
-    // Créer la date à minuit local (élimine les problèmes de fuseau horaire)
     return new Date(year, month, day, 0, 0, 0); 
 }
 
@@ -176,9 +175,26 @@ function getSundayOfWeek(date) {
     // getDay() donne 0 pour Dimanche
     const dayOfWeek = date.getDay(); 
     const sunday = new Date(date.getTime()); 
-    // Recule au dimanche précédent ou actuel
     sunday.setDate(date.getDate() - dayOfWeek);
     return sunday;
+}
+
+/**
+ * NOUVELLE FONCTION: Ramène l'affichage à la semaine courante.
+ */
+function goToToday() {
+    const today = new Date();
+    const currentSunday = getSundayOfWeek(today); 
+    
+    const year = currentSunday.getFullYear();
+    const month = String(currentSunday.getMonth() + 1).padStart(2, '0');
+    const day = String(currentSunday.getDate()).padStart(2, '0');
+    
+    // Met à jour le champ de date
+    document.getElementById('startDate').value = `${year}-${month}-${day}`;
+    
+    // Regénère l'horaire
+    generateSchedule();
 }
 
 
@@ -192,7 +208,6 @@ function getDates(startDate) {
     // Le point de départ est toujours le dimanche de la semaine de la date sélectionnée
     let current = getSundayOfWeek(selectedDate);
     
-    // Génère les 7 jours (Dimanche au Samedi)
     for (let i = 0; i < 7; i++) { 
         dates.push(new Date(current));
         current.setDate(current.getDate() + 1);
@@ -205,10 +220,8 @@ function changeWeek(delta) {
     const startDateInput = document.getElementById('startDate');
     if (!startDateInput.value) return;
 
-    // Utilise la date déjà ajustée au dimanche
     let currentStartDate = createLocalMidnightDate(startDateInput.value); 
     
-    // Avance ou recule de 7 jours
     currentStartDate.setDate(currentStartDate.getDate() + (7 * delta));
 
     // Formate et met à jour le champ de date
@@ -419,7 +432,7 @@ document.addEventListener('DOMContentLoaded', () => {
         console.error("Erreur de connexion Firebase lors de l'initialisation:", e);
     }
 
-    // Initialisation de la date au Dimanche de cette semaine
+    // Initialisation de la date au Dimanche de cette semaine (pour la première ouverture)
     const today = new Date();
     const currentSunday = getSundayOfWeek(today); 
     
