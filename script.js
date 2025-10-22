@@ -11,7 +11,6 @@ let scheduleData = {};
 
 // --- FONCTIONS DE SAUVEGARDE ET DE LECTURE (FIREBASE) ---
 
-// Sauvegarde vers Firebase
 function saveEmployees() {
     db.ref('employees').set(employees);
 }
@@ -23,14 +22,15 @@ function saveSchedule() {
     db.ref('scheduleData').set(scheduleData);
 }
 
-// Fonction pour synchroniser toutes les données de la base de données (Inchangée)
 function syncDataFromFirebase() {
+    // Écoute des changements d'employés
     db.ref('employees').on('value', (snapshot) => {
         employees = snapshot.val() || [];
         renderAdminLists();
         generateSchedule(); 
     });
 
+    // Écoute des changements de plages horaires
     db.ref('shifts').on('value', (snapshot) => {
         const storedShifts = snapshot.val() || ['8h-16h', '16h-24h', 'Congé', 'Fermé'];
         shifts = ["------"];
@@ -43,13 +43,14 @@ function syncDataFromFirebase() {
         generateSchedule();
     });
 
+    // Écoute des changements d'horaire
     db.ref('scheduleData').on('value', (snapshot) => {
         scheduleData = snapshot.val() || {};
-        generateSchedule();
+        generateSchedule(); // Le tableau se met à jour immédiatement
     });
 }
 
-// --- FONCTIONS D'AUTHENTIFICATION (inchangées) ---
+// --- FONCTIONS D'AUTHENTIFICATION ---
 function authenticateAdmin() {
     const passwordInput = document.getElementById('adminPassword');
     if (passwordInput.value === ADMIN_PASSWORD) {
@@ -84,7 +85,6 @@ function disableAdminMode() {
 
 // --- GESTION DES EMPLOYÉS ET PLAGES HORAIRES (ADMIN) ---
 
-// Les fonctions add/remove Employee/Shift restent inchangées et appellent saveXXX()
 function addEmployee() {
     const nameInput = document.getElementById('newEmployeeName');
     const deptInput = document.getElementById('newEmployeeDept');
@@ -126,7 +126,6 @@ function removeShift(shift) {
 }
 
 function renderAdminLists() {
-    // Logique de rendu des listes (inchangée)
     const shiftsList = document.getElementById('shiftsList');
     shiftsList.innerHTML = '';
     
@@ -160,76 +159,36 @@ function renderAdminLists() {
     });
 }
 
-// --- LOGIQUE DE LA CASE À COCHER N/D ---
+// --- NAVIGATION HEBDOMADAIRE ET AFFICHAGE ---
 
-function updateAvailability(event) {
-    const checkbox = event.target;
-    const scheduleKey = checkbox.getAttribute('data-key');
-    const isChecked = checkbox.checked;
-
-    // Met à jour la disponibilité dans l'objet de données sous une clé spécifique
-    const availabilityKey = `avail-${scheduleKey}`;
-
-    if (isChecked) {
-        scheduleData[availabilityKey] = true;
-    } else {
-        delete scheduleData[availabilityKey];
-    }
-    
-    // Met à jour le style de la cellule pour tous les utilisateurs
-    const cell = checkbox.closest('td');
-    if (isChecked) {
-        cell.classList.add('not-available');
-    } else {
-        cell.classList.remove('not-available');
-    }
-
-    saveSchedule(); // Sauvegarde le changement dans Firebase
-}
-
-
-// --- NAVIGATION HEBDOMADAIRE ET AFFICHAGE (CORRIGÉ POUR DÉBUT DIMANCHE GARANTI) ---
-
-/**
- * Crée un objet Date basé sur la date locale de minuit, ignorant le décalage UTC.
- */
 function createLocalMidnightDate(dateString) {
+    if (!dateString) return new Date(); 
     const parts = dateString.split('-');
     const year = parseInt(parts[0]);
     const month = parseInt(parts[1]) - 1; 
     const day = parseInt(parts[2]);
     
-    // Créer la date locale directement à 00:00:00 Heure locale
     return new Date(year, month, day, 0, 0, 0); 
 }
 
-/**
- * Prend n'importe quelle date et retourne la date du Dimanche (jour 0) de cette même semaine.
- * @param {Date} date - L'objet Date à ajuster.
- * @returns {Date} L'objet Date ajusté au Dimanche de la semaine.
- */
 function getSundayOfWeek(date) {
     const dayOfWeek = date.getDay(); 
-    
-    // Recule le nombre de jours nécessaires pour arriver au Dimanche (Jour 0)
-    date.setDate(date.getDate() - dayOfWeek);
-    return date;
+    const sunday = new Date(date.getTime()); 
+    sunday.setDate(date.getDate() - dayOfWeek);
+    return sunday;
 }
 
 
-/**
- * Détermine le Dimanche de la semaine de la date sélectionnée et génère les 7 jours.
- */
 function getDates(startDate) {
     const dates = [];
     
-    // Commence par la date actuellement sélectionnée dans l'input
+    if (!startDate || startDate === "Invalid Date") return [];
+
     let selectedDate = createLocalMidnightDate(startDate);
     
-    // S'assure que nous commençons la boucle par le Dimanche précédent ou actuel
+    // Le point de départ est le dimanche de la semaine de la date sélectionnée
     let current = getSundayOfWeek(selectedDate);
     
-    // Génère les 7 jours à partir du Dimanche
     for (let i = 0; i < 7; i++) { 
         dates.push(new Date(current));
         current.setDate(current.getDate() + 1);
@@ -238,17 +197,12 @@ function getDates(startDate) {
     return dates;
 }
 
-/**
- * Change la date de début de l'horaire (avance ou recule d'une semaine entière).
- */
 function changeWeek(delta) {
     const startDateInput = document.getElementById('startDate');
     if (!startDateInput.value) return;
 
-    // Commence par la date actuelle (qui devrait déjà être un dimanche si l'initialisation a fonctionné)
     let currentStartDate = createLocalMidnightDate(startDateInput.value); 
     
-    // On avance ou recule la date de 7 jours
     currentStartDate.setDate(currentStartDate.getDate() + (7 * delta));
 
     // Formate et met à jour le champ de date
@@ -258,12 +212,32 @@ function changeWeek(delta) {
 
     startDateInput.value = `${year}-${month}-${day}`;
     
-    // Regénère l'horaire
     generateSchedule();
 }
 
-// ... Le reste du fichier script.js ne change pas
-// Mise à jour de l'horaire par l'ADMIN (menu déroulant)
+function updateAvailability(event) {
+    const checkbox = event.target;
+    const scheduleKey = checkbox.getAttribute('data-key');
+    const isChecked = checkbox.checked;
+
+    const availabilityKey = `avail-${scheduleKey}`;
+
+    if (isChecked) {
+        scheduleData[availabilityKey] = true;
+    } else {
+        delete scheduleData[availabilityKey];
+    }
+    
+    const cell = checkbox.closest('td');
+    if (isChecked) {
+        cell.classList.add('not-available');
+    } else {
+        cell.classList.remove('not-available');
+    }
+
+    saveSchedule(); 
+}
+
 function updateSchedule(event) {
     const select = event.target;
     const key = select.getAttribute('data-key');
@@ -275,7 +249,8 @@ function updateSchedule(event) {
         scheduleData[key] = value;
     }
     
-    select.parentElement.querySelector('.shift-label').textContent = value; // Pour l'impression
+    // Met à jour l'étiquette pour l'impression
+    select.parentElement.querySelector('.shift-label').textContent = value;
     saveSchedule();
 }
 
@@ -287,8 +262,8 @@ function generateSchedule() {
     const tableHeader = document.getElementById('tableHeader');
     const tableBody = document.getElementById('tableBody'); 
 
-    // 1. Générer l'en-tête du tableau
-    tableHeader.innerHTML = '<th>Employé</th>';
+    // 1. Générer l'en-tête du tableau 
+    tableHeader.innerHTML = '<th>Département / Employé</th>';
     dates.forEach(date => {
         const day = date.toLocaleDateString('fr-FR', { weekday: 'short' });
         const dateStr = date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'numeric' });
@@ -320,14 +295,12 @@ function generateSchedule() {
                     
                     const scheduleKey = `${emp.id}-${dateKey}`;
                     const currentShift = scheduleData[scheduleKey] || "------"; 
-                    const isNotAvailable = scheduleData[`avail-${scheduleKey}`] || false; // Nouvelle clé pour N/D
+                    const isNotAvailable = scheduleData[`avail-${scheduleKey}`] || false; 
 
-                    // Ajoute la classe rouge si N/D est coché
                     if (isNotAvailable) {
                         cell.classList.add('not-available');
                     }
                     
-                    // --- NOUVELLE STRUCTURE DE LA CELLULE ---
                     cell.innerHTML = `
                         <div class="d-flex flex-column align-items-center position-relative">
                             
@@ -339,7 +312,7 @@ function generateSchedule() {
                             </div>
 
                             <select class="shift-select" data-key="${scheduleKey}" onchange="updateSchedule(event)"
-                                    ${!isAdminMode ? 'disabled' : ''} style="min-width: 90px; margin-top: 5px;">
+                                    ${!isAdminMode ? 'disabled' : ''} style="min-width: 90px; margin-top: 15px;">
                                 ${shifts.map(shift => `<option value="${shift}" ${shift === currentShift ? 'selected' : ''}>${shift}</option>`).join('')}
                             </select>
                             
@@ -355,7 +328,7 @@ function generateSchedule() {
 }
 
 
-// --- FONCTIONS DE FILTRAGE ET EXPORT (inchangées) ---
+// --- FONCTIONS DE FILTRAGE ET EXPORT ---
 
 function filterByButton(button, dept) {
     const buttons = document.querySelectorAll('.d-flex.gap-2 button');
@@ -431,22 +404,32 @@ function exportPDF() {
 }
 
 
-// --- INITIALISATION (MODIFIÉ) ---
+// --- INITIALISATION ---
 
 document.addEventListener('DOMContentLoaded', () => {
-    syncDataFromFirebase(); 
-    
-    // MODIFICATION ICI: Initialise la date de début au Dimanche de cette semaine
+    try {
+        // Tente la connexion Firebase
+        syncDataFromFirebase(); 
+    } catch (e) {
+        console.error("Erreur de connexion Firebase lors de l'initialisation:", e);
+    }
+
+    // Définit la date de départ (Dimanche de cette semaine)
     const today = new Date();
-    const currentSunday = getSundayOfWeek(today); // Trouve le Dimanche
+    const currentSunday = getSundayOfWeek(today); 
     
-    // Formate le Dimanche pour le champ input (YYYY-MM-DD)
     const year = currentSunday.getFullYear();
     const month = String(currentSunday.getMonth() + 1).padStart(2, '0');
     const day = String(currentSunday.getDate()).padStart(2, '0');
     
-    document.getElementById('startDate').value = `${year}-${month}-${day}`;
+    const startDateInput = document.getElementById('startDate');
+    if (startDateInput) {
+        startDateInput.value = `${year}-${month}-${day}`;
+    }
 
-    document.getElementById('adminPanel').style.display = 'none';
-});
+    // Cache le panneau d'administration
+    const adminPanel = document.getElementById('adminPanel');
+    if (adminPanel) {
+        adminPanel.style.display = 'none';
+    }
 });
