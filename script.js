@@ -6,49 +6,47 @@ let currentDisplayFilter = 'all';
 
 // Ces variables sont mises à jour par les écouteurs Firebase
 let employees = [];
-// Shifts spéciaux (Congé, Maladie)
-const SPECIAL_SHIFTS = ["------", "Congé", "Maladie", "Fermé"]; 
+let shifts = ["------"]; 
 let scheduleData = {}; 
-
-
-// --- FONCTION UTILITAIRE : GÉNÉRATION DES HEURES (30 min) ---
-
-function generateTimeOptions() {
-    const options = ["------"];
-    for (let h = 0; h < 24; h++) {
-        for (let m = 0; m < 60; m += 30) {
-            const hour = String(h).padStart(2, '0');
-            const minute = String(m).padStart(2, '0');
-            options.push(`${hour}:${minute}`);
-        }
-    }
-    options.push("24:00");
-    return options;
-}
-
-const TIME_OPTIONS = generateTimeOptions();
-
 
 // --- FONCTIONS DE SAUVEGARDE ET DE LECTURE (FIREBASE) ---
 
 function saveEmployees() {
     db.ref('employees').set(employees);
 }
-
+function saveShifts() {
+    const shiftsToSave = shifts.filter(s => s !== "------");
+    db.ref('shifts').set(shiftsToSave);
+}
 function saveSchedule() {
     db.ref('scheduleData').set(scheduleData);
 }
 
 function syncDataFromFirebase() {
+    // Écoute des changements d'employés
     db.ref('employees').on('value', (snapshot) => {
         employees = snapshot.val() || [];
         renderAdminLists();
         generateSchedule(); 
     });
 
+    // Écoute des changements de plages horaires
+    db.ref('shifts').on('value', (snapshot) => {
+        const storedShifts = snapshot.val() || ['8h-16h', '16h-24h', 'Congé', 'Fermé'];
+        shifts = ["------"];
+        storedShifts.forEach(shift => {
+            if (shift !== "------" && !shifts.includes(shift)) {
+                shifts.push(shift);
+            }
+        });
+        renderAdminLists();
+        generateSchedule();
+    });
+
+    // Écoute des changements d'horaire
     db.ref('scheduleData').on('value', (snapshot) => {
         scheduleData = snapshot.val() || {};
-        generateSchedule(); 
+        generateSchedule(); // Le tableau se met à jour immédiatement
     });
 }
 
@@ -78,7 +76,7 @@ function disableAdminMode() {
     const passwordInput = document.getElementById('adminPassword');
     passwordInput.disabled = false;
     document.getElementById('adminAuthButton').disabled = false;
-    passwordInput.placeholder = '';
+    passwordInput.placeholder = 'Mot de passe admin (1000)';
     document.getElementById('adminPanel').style.display = 'none';
     generateSchedule();
     alert("Mode Administrateur désactivé.");
@@ -111,14 +109,34 @@ function removeEmployee(id) {
     saveSchedule();
 }
 
-// NOTE: Les fonctions addShift et removeShift ont été retirées.
+function addShift() {
+    const shiftInput = document.getElementById('newShift');
+    const newShift = shiftInput.value.trim();
 
-// CORRIGÉ: Fonction nettoyée pour ne gérer que les employés
+    if (newShift && newShift !== "------" && !shifts.includes(newShift)) {
+        shifts.push(newShift);
+        saveShifts();
+        shiftInput.value = '';
+    }
+}
+
+function removeShift(shift) {
+    shifts = shifts.filter(s => s !== shift);
+    saveShifts();
+}
+
 function renderAdminLists() {
+    const shiftsList = document.getElementById('shiftsList');
+    shiftsList.innerHTML = '';
     
-    // NOTE: Gestion des Plages Horaires retirée de l'interface Admin.
-    
-    // Affiche la liste des employés par département dans le panneau admin.
+    shifts.filter(s => s !== "------").forEach(shift => {
+        const li = document.createElement('li');
+        li.className = 'list-group-item d-flex justify-content-between align-items-center';
+        const safeShift = shift.replace(/'/g, "\\'"); 
+        li.innerHTML = `${shift} <button class="btn btn-sm btn-danger" onclick="removeShift('${safeShift}')">X</button>`;
+        shiftsList.appendChild(li);
+    });
+
     const listContainer = document.getElementById('employeesListContainer');
     listContainer.innerHTML = '';
 
@@ -141,55 +159,7 @@ function renderAdminLists() {
     });
 }
 
-
-// --- LOGIQUE DE SAISIE DOUBLE MENU ---
-
-function updateShiftTime(scheduleKey, type, event) {
-    const container = event.target.closest('td');
-    const startTimeSelect = container.querySelector('.start-time');
-    const endTimeSelect = container.querySelector('.end-time');
-    
-    let startValue = startTimeSelect.value;
-    let endValue = endTimeSelect.value;
-    
-    let shiftToSave = null;
-
-    // Si le menu de Début est une option spéciale (Congé, Maladie, etc.)
-    if (SPECIAL_SHIFTS.includes(startValue) && startValue !== "------") {
-        shiftToSave = startValue;
-        
-        // On force le menu de Fin à "------" pour éviter la confusion
-        if (endTimeSelect.value !== "------") {
-             endTimeSelect.value = "------";
-             endValue = "------";
-        }
-
-    } 
-    // Sinon, on tente de former une plage horaire
-    else if (startValue !== "------" || endValue !== "------") {
-        shiftToSave = `${startValue}-${endValue}`;
-    }
-
-    // Sauvegarde ou suppression de la donnée
-    if (shiftToSave === null || shiftToSave === "------" || shiftToSave === "------" + "-" + "------") {
-        delete scheduleData[scheduleKey];
-        container.querySelector('.shift-label').textContent = "------";
-    } else {
-        scheduleData[scheduleKey] = shiftToSave;
-        
-        // Met à jour l'étiquette pour l'impression/affichage
-        const displayValue = SPECIAL_SHIFTS.includes(shiftToSave) 
-                            ? shiftToSave 
-                            : shiftToSave.replace('-', ' à ');
-                            
-        container.querySelector('.shift-label').textContent = displayValue;
-    }
-
-    saveSchedule(); 
-}
-
-
-// --- NAVIGATION HEBDOMADAIRE ET AFFICHAGE ---
+// --- NAVIGATION HEBDOMADAIRE ET AFFICHAGE (CORRECTION DATE DIMANCHE) ---
 
 function createLocalMidnightDate(dateString) {
     if (!dateString) return new Date(); 
@@ -202,12 +172,16 @@ function createLocalMidnightDate(dateString) {
 }
 
 function getSundayOfWeek(date) {
+    // getDay() donne 0 pour Dimanche
     const dayOfWeek = date.getDay(); 
     const sunday = new Date(date.getTime()); 
     sunday.setDate(date.getDate() - dayOfWeek);
     return sunday;
 }
 
+/**
+ * NOUVELLE FONCTION: Ramène l'affichage à la semaine courante.
+ */
 function goToToday() {
     const today = new Date();
     const currentSunday = getSundayOfWeek(today); 
@@ -216,8 +190,10 @@ function goToToday() {
     const month = String(currentSunday.getMonth() + 1).padStart(2, '0');
     const day = String(currentSunday.getDate()).padStart(2, '0');
     
+    // Met à jour le champ de date
     document.getElementById('startDate').value = `${year}-${month}-${day}`;
     
+    // Regénère l'horaire
     generateSchedule();
 }
 
@@ -229,6 +205,7 @@ function getDates(startDate) {
 
     let selectedDate = createLocalMidnightDate(startDate);
     
+    // Le point de départ est toujours le dimanche de la semaine de la date sélectionnée
     let current = getSundayOfWeek(selectedDate);
     
     for (let i = 0; i < 7; i++) { 
@@ -247,6 +224,7 @@ function changeWeek(delta) {
     
     currentStartDate.setDate(currentStartDate.getDate() + (7 * delta));
 
+    // Formate et met à jour le champ de date
     const year = currentStartDate.getFullYear();
     const month = String(currentStartDate.getMonth() + 1).padStart(2, '0');
     const day = String(currentStartDate.getDate()).padStart(2, '0');
@@ -279,6 +257,21 @@ function updateAvailability(event) {
     saveSchedule(); 
 }
 
+function updateSchedule(event) {
+    const select = event.target;
+    const key = select.getAttribute('data-key');
+    const value = select.value;
+    
+    if (value === "------") {
+        delete scheduleData[key];
+    } else {
+        scheduleData[key] = value;
+    }
+    
+    select.parentElement.querySelector('.shift-label').textContent = value;
+    saveSchedule();
+}
+
 function generateSchedule() {
     const startDateInput = document.getElementById('startDate').value;
     if (!startDateInput) return;
@@ -286,13 +279,8 @@ function generateSchedule() {
     const dates = getDates(startDateInput); 
     const tableHeader = document.getElementById('tableHeader');
     const tableBody = document.getElementById('tableBody'); 
-    
-    // 1. Préparer les options HTML
-    const timeOptionsHTML = TIME_OPTIONS.map(time => `<option value="${time}">${time}</option>`).join('');
-    const specialOptionsHTML = SPECIAL_SHIFTS.map(shift => `<option value="${shift}">${shift}</option>`).join('');
 
-
-    // 2. Générer l'en-tête du tableau 
+    // 1. Générer l'en-tête du tableau 
     tableHeader.innerHTML = '<th>Département / Employé</th>';
     dates.forEach(date => {
         const day = date.toLocaleDateString('fr-FR', { weekday: 'short' });
@@ -300,7 +288,7 @@ function generateSchedule() {
         tableHeader.innerHTML += `<th>${day}<br>${dateStr}</th>`;
     });
 
-    // 3. Générer le corps du tableau
+    // 2. Générer le corps du tableau
     tableBody.innerHTML = '';
     let currentRow = 0;
 
@@ -324,30 +312,13 @@ function generateSchedule() {
                     const cell = row.insertCell();
                     
                     const scheduleKey = `${emp.id}-${dateKey}`;
-                    const shiftData = scheduleData[scheduleKey]; 
+                    const currentShift = scheduleData[scheduleKey] || "------"; 
                     const isNotAvailable = scheduleData[`avail-${scheduleKey}`] || false; 
-
-                    // Initialisation des valeurs
-                    let startTime = "------";
-                    let endTime = "------";
-                    let specialShift = "------";
-                    let displayValue = "------";
-                    
-                    if (shiftData) {
-                        if (shiftData.includes('-')) {
-                            [startTime, endTime] = shiftData.split('-');
-                            displayValue = shiftData.replace('-', ' à ');
-                        } else {
-                            specialShift = shiftData;
-                            displayValue = specialShift;
-                        }
-                    }
 
                     if (isNotAvailable) {
                         cell.classList.add('not-available');
                     }
                     
-                    // --- STRUCTURE DE LA CELLULE AVEC DEUX MENUS ---
                     cell.innerHTML = `
                         <div class="d-flex flex-column align-items-center position-relative">
                             
@@ -358,25 +329,12 @@ function generateSchedule() {
                                 <label class="form-check-label fw-bold" for="nd-${scheduleKey}">N/D</label>
                             </div>
 
-                            <select class="form-select form-select-sm mb-1 start-time" data-key="${scheduleKey}" 
-                                    onchange="updateShiftTime('${scheduleKey}', 'start', event)"
-                                    ${!isAdminMode ? 'disabled' : ''} style="min-width: 95px;">
-                                    
-                                ${SPECIAL_SHIFTS.map(shift => `<option value="${shift}" ${shift === specialShift ? 'selected' : ''}>${shift}</option>`).join('')}
-                                
-                                <option disabled>──────────</option>
-                                
-                                ${TIME_OPTIONS.filter(t => t !== "------").map(time => `<option value="${time}" ${time === startTime ? 'selected' : ''}>${time}</option>`).join('')}
-                                
+                            <select class="shift-select" data-key="${scheduleKey}" onchange="updateSchedule(event)"
+                                    ${!isAdminMode ? 'disabled' : ''} style="min-width: 90px; margin-top: 15px;">
+                                ${shifts.map(shift => `<option value="${shift}" ${shift === currentShift ? 'selected' : ''}>${shift}</option>`).join('')}
                             </select>
                             
-                            <select class="form-select form-select-sm end-time" data-key="${scheduleKey}" 
-                                    onchange="updateShiftTime('${scheduleKey}', 'end', event)"
-                                    ${!isAdminMode ? 'disabled' : ''} style="min-width: 95px;">
-                                ${TIME_OPTIONS.map(time => `<option value="${time}" ${time === endTime ? 'selected' : ''}>${time}</option>`).join('')}
-                            </select>
-                            
-                            <span class="shift-label fw-bold mt-1" style="font-size: 0.9em;">${displayValue}</span>
+                            <span class="shift-label" style="display: none;">${currentShift}</span>
                         </div>
                     `;
                 });
@@ -388,7 +346,7 @@ function generateSchedule() {
 }
 
 
-// --- FONCTIONS DE FILTRAGE ET EXPORT (inchangées) ---
+// --- FONCTIONS DE FILTRAGE ET EXPORT ---
 
 function filterByButton(button, dept) {
     const buttons = document.querySelectorAll('.d-flex.gap-2 button');
@@ -468,12 +426,13 @@ function exportPDF() {
 
 document.addEventListener('DOMContentLoaded', () => {
     try {
+        // Tente la connexion Firebase
         syncDataFromFirebase(); 
     } catch (e) {
         console.error("Erreur de connexion Firebase lors de l'initialisation:", e);
     }
 
-    // Initialisation de la date au Dimanche de cette semaine
+    // Initialisation de la date au Dimanche de cette semaine (pour la première ouverture)
     const today = new Date();
     const currentSunday = getSundayOfWeek(today); 
     
@@ -486,6 +445,7 @@ document.addEventListener('DOMContentLoaded', () => {
         startDateInput.value = `${year}-${month}-${day}`;
     }
 
+    // Cache le panneau d'administration
     const adminPanel = document.getElementById('adminPanel');
     if (adminPanel) {
         adminPanel.style.display = 'none';
