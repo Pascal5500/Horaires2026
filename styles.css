@@ -22,7 +22,7 @@ body {
     position: sticky;
     top: 0; 
     z-index: 10;
-    background-color: #E6B409; 
+    background-color: #343a40; 
 }
 
 /* Style général du tableau */
@@ -50,7 +50,9 @@ body {
 
 /* Règle principale pour la couleur rouge de la cellule */
 .not-available {
+    /* Utilisation de !important pour forcer la couleur de fond sur la cellule (td) */
     background-color: #ffcccc !important; 
+    /* Force la bordure pour la visibilité */
     border: 1px solid #cc0000 !important; 
 }
 

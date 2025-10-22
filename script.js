@@ -1,5 +1,5 @@
 // --- DÉCLARATION DES VARIABLES GLOBALES ET DONNÉES DE BASE ---
-const DEPARTMENTS = ["Préposé à accueil", "Préposé aux Départs", "Préposé terrain", "Préposé aux Carts"];
+const DEPARTMENTS = ["Accueil", "Départs", "Terrain", "Carts"];
 const ADMIN_PASSWORD = '1000'; 
 let isAdminMode = false;
 let currentDisplayFilter = 'all'; 
@@ -76,7 +76,7 @@ function disableAdminMode() {
     const passwordInput = document.getElementById('adminPassword');
     passwordInput.disabled = false;
     document.getElementById('adminAuthButton').disabled = false;
-    passwordInput.placeholder = '';
+    passwordInput.placeholder = 'Mot de passe admin (1000)';
     document.getElementById('adminPanel').style.display = 'none';
     generateSchedule();
     alert("Mode Administrateur désactivé.");
@@ -168,12 +168,15 @@ function createLocalMidnightDate(dateString) {
     const month = parseInt(parts[1]) - 1; 
     const day = parseInt(parts[2]);
     
+    // Créer la date à minuit local (élimine les problèmes de fuseau horaire)
     return new Date(year, month, day, 0, 0, 0); 
 }
 
 function getSundayOfWeek(date) {
+    // getDay() donne 0 pour Dimanche
     const dayOfWeek = date.getDay(); 
     const sunday = new Date(date.getTime()); 
+    // Recule au dimanche précédent ou actuel
     sunday.setDate(date.getDate() - dayOfWeek);
     return sunday;
 }
@@ -186,9 +189,10 @@ function getDates(startDate) {
 
     let selectedDate = createLocalMidnightDate(startDate);
     
-    // Le point de départ est le dimanche de la semaine de la date sélectionnée
+    // Le point de départ est toujours le dimanche de la semaine de la date sélectionnée
     let current = getSundayOfWeek(selectedDate);
     
+    // Génère les 7 jours (Dimanche au Samedi)
     for (let i = 0; i < 7; i++) { 
         dates.push(new Date(current));
         current.setDate(current.getDate() + 1);
@@ -201,8 +205,10 @@ function changeWeek(delta) {
     const startDateInput = document.getElementById('startDate');
     if (!startDateInput.value) return;
 
+    // Utilise la date déjà ajustée au dimanche
     let currentStartDate = createLocalMidnightDate(startDateInput.value); 
     
+    // Avance ou recule de 7 jours
     currentStartDate.setDate(currentStartDate.getDate() + (7 * delta));
 
     // Formate et met à jour le champ de date
@@ -249,7 +255,6 @@ function updateSchedule(event) {
         scheduleData[key] = value;
     }
     
-    // Met à jour l'étiquette pour l'impression
     select.parentElement.querySelector('.shift-label').textContent = value;
     saveSchedule();
 }
@@ -263,7 +268,7 @@ function generateSchedule() {
     const tableBody = document.getElementById('tableBody'); 
 
     // 1. Générer l'en-tête du tableau 
-    tableHeader.innerHTML = '<th>Employé</th>';
+    tableHeader.innerHTML = '<th>Département / Employé</th>';
     dates.forEach(date => {
         const day = date.toLocaleDateString('fr-FR', { weekday: 'short' });
         const dateStr = date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'numeric' });
@@ -414,7 +419,7 @@ document.addEventListener('DOMContentLoaded', () => {
         console.error("Erreur de connexion Firebase lors de l'initialisation:", e);
     }
 
-    // Définit la date de départ (Dimanche de cette semaine)
+    // Initialisation de la date au Dimanche de cette semaine
     const today = new Date();
     const currentSunday = getSundayOfWeek(today); 
     
