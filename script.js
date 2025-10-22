@@ -6,18 +6,42 @@ let currentDisplayFilter = 'all';
 
 // Ces variables sont mises à jour par les écouteurs Firebase
 let employees = [];
-let shifts = ["------"]; 
+// Shifts spéciaux (Congé, Maladie) qui ne sont PAS des heures précises.
+const SPECIAL_SHIFTS = ["------", "Congé", "Maladie", "Fermé"]; 
 let scheduleData = {}; 
+
+
+// --- FONCTION UTILITAIRE : GÉNÉRATION DES HEURES (30 min) ---
+
+/**
+ * Génère un tableau d'options d'heures par intervalles de 30 minutes, 
+ * de "00:00" à "24:00" (pour la fin de quart).
+ * @returns {string[]} Tableau des heures.
+ */
+function generateTimeOptions() {
+    const options = ["------"];
+    // Génère les heures de 00:00 à 23:30
+    for (let h = 0; h < 24; h++) {
+        for (let m = 0; m < 60; m += 30) {
+            const hour = String(h).padStart(2, '0');
+            const minute = String(m).padStart(2, '0');
+            options.push(`${hour}:${minute}`);
+        }
+    }
+    // Ajoute 24:00 (minuit le jour suivant) pour la fin de quart
+    options.push("24:00");
+    return options;
+}
+
+const TIME_OPTIONS = generateTimeOptions();
+
 
 // --- FONCTIONS DE SAUVEGARDE ET DE LECTURE (FIREBASE) ---
 
 function saveEmployees() {
     db.ref('employees').set(employees);
 }
-function saveShifts() {
-    const shiftsToSave = shifts.filter(s => s !== "------");
-    db.ref('shifts').set(shiftsToSave);
-}
+
 function saveSchedule() {
     db.ref('scheduleData').set(scheduleData);
 }
@@ -30,23 +54,10 @@ function syncDataFromFirebase() {
         generateSchedule(); 
     });
 
-    // Écoute des changements de plages horaires
-    db.ref('shifts').on('value', (snapshot) => {
-        const storedShifts = snapshot.val() || ['8h-16h', '16h-24h', 'Congé', 'Fermé'];
-        shifts = ["------"];
-        storedShifts.forEach(shift => {
-            if (shift !== "------" && !shifts.includes(shift)) {
-                shifts.push(shift);
-            }
-        });
-        renderAdminLists();
-        generateSchedule();
-    });
-
     // Écoute des changements d'horaire
     db.ref('scheduleData').on('value', (snapshot) => {
         scheduleData = snapshot.val() || {};
-        generateSchedule(); // Le tableau se met à jour immédiatement
+        generateSchedule(); 
     });
 }
 
@@ -76,14 +87,14 @@ function disableAdminMode() {
     const passwordInput = document.getElementById('adminPassword');
     passwordInput.disabled = false;
     document.getElementById('adminAuthButton').disabled = false;
-    passwordInput.placeholder = 'Mot de passe admin (1000)';
+    passwordInput.placeholder = '';
     document.getElementById('adminPanel').style.display = 'none';
     generateSchedule();
     alert("Mode Administrateur désactivé.");
 }
 
 
-// --- GESTION DES EMPLOYÉS ET PLAGES HORAIRES (ADMIN) ---
+// --- GESTION DES EMPLOYÉS (ADMIN) ---
 
 function addEmployee() {
     const nameInput = document.getElementById('newEmployeeName');
@@ -109,34 +120,8 @@ function removeEmployee(id) {
     saveSchedule();
 }
 
-function addShift() {
-    const shiftInput = document.getElementById('newShift');
-    const newShift = shiftInput.value.trim();
-
-    if (newShift && newShift !== "------" && !shifts.includes(newShift)) {
-        shifts.push(newShift);
-        saveShifts();
-        shiftInput.value = '';
-    }
-}
-
-function removeShift(shift) {
-    shifts = shifts.filter(s => s !== shift);
-    saveShifts();
-}
-
 function renderAdminLists() {
-    const shiftsList = document.getElementById('shiftsList');
-    shiftsList.innerHTML = '';
-    
-    shifts.filter(s => s !== "------").forEach(shift => {
-        const li = document.createElement('li');
-        li.className = 'list-group-item d-flex justify-content-between align-items-center';
-        const safeShift = shift.replace(/'/g, "\\'"); 
-        li.innerHTML = `${shift} <button class="btn btn-sm btn-danger" onclick="removeShift('${safeShift}')">X</button>`;
-        shiftsList.appendChild(li);
-    });
-
+    // Affiche la liste des employés par département dans le panneau admin.
     const listContainer = document.getElementById('employeesListContainer');
     listContainer.innerHTML = '';
 
@@ -159,295 +144,29 @@ function renderAdminLists() {
     });
 }
 
-// --- NAVIGATION HEBDOMADAIRE ET AFFICHAGE (CORRECTION DATE DIMANCHE) ---
 
-function createLocalMidnightDate(dateString) {
-    if (!dateString) return new Date(); 
-    const parts = dateString.split('-');
-    const year = parseInt(parts[0]);
-    const month = parseInt(parts[1]) - 1; 
-    const day = parseInt(parts[2]);
-    
-    return new Date(year, month, day, 0, 0, 0); 
-}
-
-function getSundayOfWeek(date) {
-    // getDay() donne 0 pour Dimanche
-    const dayOfWeek = date.getDay(); 
-    const sunday = new Date(date.getTime()); 
-    sunday.setDate(date.getDate() - dayOfWeek);
-    return sunday;
-}
+// --- LOGIQUE DE SAISIE DOUBLE MENU ---
 
 /**
- * NOUVELLE FONCTION: Ramène l'affichage à la semaine courante.
+ * Met à jour l'horaire pour une case donnée en utilisant les valeurs de début et de fin,
+ * ou en utilisant une option spéciale (Congé, Maladie).
+ * @param {string} scheduleKey - Clé unique de l'horaire (empId-dateKey).
+ * @param {string} type - 'start' ou 'end' (pour déterminer quel menu a changé).
+ * @param {Event} event - L'événement de changement.
  */
-function goToToday() {
-    const today = new Date();
-    const currentSunday = getSundayOfWeek(today); 
+function updateShiftTime(scheduleKey, type, event) {
+    const container = event.target.closest('td');
+    const startTimeSelect = container.querySelector('.start-time');
+    const endTimeSelect = container.querySelector('.end-time');
     
-    const year = currentSunday.getFullYear();
-    const month = String(currentSunday.getMonth() + 1).padStart(2, '0');
-    const day = String(currentSunday.getDate()).padStart(2, '0');
+    let startValue = startTimeSelect.value;
+    let endValue = endTimeSelect.value;
     
-    // Met à jour le champ de date
-    document.getElementById('startDate').value = `${year}-${month}-${day}`;
-    
-    // Regénère l'horaire
-    generateSchedule();
-}
+    let shiftToSave = null;
 
-
-function getDates(startDate) {
-    const dates = [];
-    
-    if (!startDate || startDate === "Invalid Date") return [];
-
-    let selectedDate = createLocalMidnightDate(startDate);
-    
-    // Le point de départ est toujours le dimanche de la semaine de la date sélectionnée
-    let current = getSundayOfWeek(selectedDate);
-    
-    for (let i = 0; i < 7; i++) { 
-        dates.push(new Date(current));
-        current.setDate(current.getDate() + 1);
-    }
-    
-    return dates;
-}
-
-function changeWeek(delta) {
-    const startDateInput = document.getElementById('startDate');
-    if (!startDateInput.value) return;
-
-    let currentStartDate = createLocalMidnightDate(startDateInput.value); 
-    
-    currentStartDate.setDate(currentStartDate.getDate() + (7 * delta));
-
-    // Formate et met à jour le champ de date
-    const year = currentStartDate.getFullYear();
-    const month = String(currentStartDate.getMonth() + 1).padStart(2, '0');
-    const day = String(currentStartDate.getDate()).padStart(2, '0');
-
-    startDateInput.value = `${year}-${month}-${day}`;
-    
-    generateSchedule();
-}
-
-function updateAvailability(event) {
-    const checkbox = event.target;
-    const scheduleKey = checkbox.getAttribute('data-key');
-    const isChecked = checkbox.checked;
-
-    const availabilityKey = `avail-${scheduleKey}`;
-
-    if (isChecked) {
-        scheduleData[availabilityKey] = true;
-    } else {
-        delete scheduleData[availabilityKey];
-    }
-    
-    const cell = checkbox.closest('td');
-    if (isChecked) {
-        cell.classList.add('not-available');
-    } else {
-        cell.classList.remove('not-available');
-    }
-
-    saveSchedule(); 
-}
-
-function updateSchedule(event) {
-    const select = event.target;
-    const key = select.getAttribute('data-key');
-    const value = select.value;
-    
-    if (value === "------") {
-        delete scheduleData[key];
-    } else {
-        scheduleData[key] = value;
-    }
-    
-    select.parentElement.querySelector('.shift-label').textContent = value;
-    saveSchedule();
-}
-
-function generateSchedule() {
-    const startDateInput = document.getElementById('startDate').value;
-    if (!startDateInput) return;
-
-    const dates = getDates(startDateInput); 
-    const tableHeader = document.getElementById('tableHeader');
-    const tableBody = document.getElementById('tableBody'); 
-
-    // 1. Générer l'en-tête du tableau 
-    tableHeader.innerHTML = '<th>Département / Employé</th>';
-    dates.forEach(date => {
-        const day = date.toLocaleDateString('fr-FR', { weekday: 'short' });
-        const dateStr = date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'numeric' });
-        tableHeader.innerHTML += `<th>${day}<br>${dateStr}</th>`;
-    });
-
-    // 2. Générer le corps du tableau
-    tableBody.innerHTML = '';
-    let currentRow = 0;
-
-    DEPARTMENTS.forEach(dept => {
-        const deptEmployees = employees.filter(emp => emp.dept === dept);
-
-        if (deptEmployees.length > 0) {
-            const deptRow = tableBody.insertRow(currentRow++);
-            deptRow.className = 'table-secondary fw-bold dept-header-row';
-            deptRow.setAttribute('data-dept', dept); 
-            deptRow.innerHTML = `<td colspan="${8}">${dept}</td>`; 
-            
-            deptEmployees.forEach(emp => {
-                const row = tableBody.insertRow(currentRow++);
-                row.className = 'employee-row'; 
-                row.setAttribute('data-dept', dept);
-                row.innerHTML = `<td>${emp.name}</td>`; 
-
-                dates.forEach(date => {
-                    const dateKey = date.toISOString().split('T')[0];
-                    const cell = row.insertCell();
-                    
-                    const scheduleKey = `${emp.id}-${dateKey}`;
-                    const currentShift = scheduleData[scheduleKey] || "------"; 
-                    const isNotAvailable = scheduleData[`avail-${scheduleKey}`] || false; 
-
-                    if (isNotAvailable) {
-                        cell.classList.add('not-available');
-                    }
-                    
-                    cell.innerHTML = `
-                        <div class="d-flex flex-column align-items-center position-relative">
-                            
-                            <div class="form-check form-check-inline availability-check">
-                                <input class="form-check-input" type="checkbox" data-key="${scheduleKey}" 
-                                       id="nd-${scheduleKey}" onchange="updateAvailability(event)"
-                                       ${isNotAvailable ? 'checked' : ''}>
-                                <label class="form-check-label fw-bold" for="nd-${scheduleKey}">N/D</label>
-                            </div>
-
-                            <select class="shift-select" data-key="${scheduleKey}" onchange="updateSchedule(event)"
-                                    ${!isAdminMode ? 'disabled' : ''} style="min-width: 90px; margin-top: 15px;">
-                                ${shifts.map(shift => `<option value="${shift}" ${shift === currentShift ? 'selected' : ''}>${shift}</option>`).join('')}
-                            </select>
-                            
-                            <span class="shift-label" style="display: none;">${currentShift}</span>
-                        </div>
-                    `;
-                });
-            });
-        }
-    });
-    
-    applyDisplayFilter(currentDisplayFilter);
-}
-
-
-// --- FONCTIONS DE FILTRAGE ET EXPORT ---
-
-function filterByButton(button, dept) {
-    const buttons = document.querySelectorAll('.d-flex.gap-2 button');
-    buttons.forEach(btn => btn.classList.remove('active'));
-    button.classList.add('active');
-
-    currentDisplayFilter = dept;
-    applyDisplayFilter(dept);
-}
-
-function applyDisplayFilter(deptToFilter) {
-    const tableBody = document.getElementById('tableBody'); 
-    const rows = tableBody.rows;
-    let isCurrentDeptRowVisible = false;
-
-    for (let i = 0; i < rows.length; i++) {
-        const row = rows[i];
-        const deptName = row.getAttribute('data-dept');
+    // Si le menu de Début est une option spéciale (Congé, Maladie, etc.)
+    if (SPECIAL_SHIFTS.includes(startValue) && startValue !== "------") {
+        shiftToSave = startValue;
         
-        if (row.classList.contains('dept-header-row')) { 
-            if (deptToFilter === 'all' || deptName === deptToFilter) {
-                isCurrentDeptRowVisible = true;
-                row.style.display = '';
-            } else {
-                isCurrentDeptRowVisible = false;
-                row.style.display = 'none';
-            }
-        } else if (row.classList.contains('employee-row')) { 
-            if (isCurrentDeptRowVisible) {
-                row.style.display = '';
-            } else {
-                row.style.display = 'none';
-            }
-        }
-    }
-}
-
-function filterScheduleForAction(deptToFilter) {
-    applyDisplayFilter(deptToFilter);
-}
-
-function getSelectedDept() {
-    return document.getElementById('deptSelector').value;
-}
-
-function printSchedule() {
-    const dept = getSelectedDept();
-    filterScheduleForAction(dept); 
-    window.print();
-    filterScheduleForAction(currentDisplayFilter); 
-}
-
-function exportPDF() {
-    const dept = getSelectedDept();
-    filterScheduleForAction(dept);
-    
-    const table = document.getElementById('scheduleTable');
-    
-    html2canvas(table, { scale: 2 }).then(canvas => {
-        const imgData = canvas.toDataURL('image/png');
-        const { jsPDF } = window.jspdf;
-        const pdf = new jsPDF('l', 'mm', 'a4');
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-        const imgHeight = canvas.height * pdfWidth / canvas.width;
-        
-        pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, imgHeight);
-        
-        const filename = dept === 'all' ? 'Horaire_Complet.pdf' : `Horaire_${dept}.pdf`;
-        pdf.save(filename);
-
-        filterScheduleForAction(currentDisplayFilter); 
-    });
-}
-
-
-// --- INITIALISATION ---
-
-document.addEventListener('DOMContentLoaded', () => {
-    try {
-        // Tente la connexion Firebase
-        syncDataFromFirebase(); 
-    } catch (e) {
-        console.error("Erreur de connexion Firebase lors de l'initialisation:", e);
-    }
-
-    // Initialisation de la date au Dimanche de cette semaine (pour la première ouverture)
-    const today = new Date();
-    const currentSunday = getSundayOfWeek(today); 
-    
-    const year = currentSunday.getFullYear();
-    const month = String(currentSunday.getMonth() + 1).padStart(2, '0');
-    const day = String(currentSunday.getDate()).padStart(2, '0');
-    
-    const startDateInput = document.getElementById('startDate');
-    if (startDateInput) {
-        startDateInput.value = `${year}-${month}-${day}`;
-    }
-
-    // Cache le panneau d'administration
-    const adminPanel = document.getElementById('adminPanel');
-    if (adminPanel) {
-        adminPanel.style.display = 'none';
-    }
-});
+        // On force le menu de Fin à "------" pour éviter la confusion
+        if (endTimeSelect.value !== "------") {
