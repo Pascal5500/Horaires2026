@@ -1,5 +1,5 @@
 // --- DÉCLARATION DES VARIABLES GLOBALES ET DONNÉES DE BASE ---
-const DEPARTMENTS = ["Accueil", "Départs", "Terrain", "Carts"];
+const DEPARTMENTS = ["Préposé à accueil", "Préposé aux Départs", "Préposé terrain", "Préposé aux Carts"];
 const ADMIN_PASSWORD = '1000'; 
 let isAdminMode = false;
 let currentDisplayFilter = 'all'; 
@@ -76,7 +76,7 @@ function disableAdminMode() {
     const passwordInput = document.getElementById('adminPassword');
     passwordInput.disabled = false;
     document.getElementById('adminAuthButton').disabled = false;
-    passwordInput.placeholder = 'Mot de passe admin (1000)';
+    passwordInput.placeholder = '';
     document.getElementById('adminPanel').style.display = 'none';
     generateSchedule();
     alert("Mode Administrateur désactivé.");
